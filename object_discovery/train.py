@@ -30,6 +30,9 @@ import slot_attention.utils as utils
 FLAGS = flags.FLAGS
 flags.DEFINE_string("model_dir", "/tmp/object_discovery/",
                     "Where to save the checkpoints.")
+flags.DEFINE_string("dataset", "clevr", "Which dataset to use")
+flags.DEFINE_string("data_path", "", "Root folder for the dataset (ignored for clevr)")
+flags.DEFINE_integer("resolution", 128, "Image resolution")
 flags.DEFINE_integer("seed", 0, "Random seed.")
 flags.DEFINE_integer("batch_size", 64, "Batch size for the model.")
 flags.DEFINE_integer("num_slots", 7, "Number of slots in Slot Attention.")
@@ -75,12 +78,21 @@ def main(argv):
   decay_rate = FLAGS.decay_rate
   decay_steps = FLAGS.decay_steps
   tf.random.set_seed(FLAGS.seed)
-  resolution = (128, 128)
+  resolution = (FLAGS.resolution, FLAGS.resolution)
 
   # Build dataset iterators, optimizers and model.
-  data_iterator = data_utils.build_clevr_iterator(
-      batch_size, split="train", resolution=resolution, shuffle=True,
-      max_n_objects=6, get_properties=False, apply_crop=True)
+  if FLAGS.dataset == 'clevr':
+    dataset_builder = data_utils.build_clevr
+    crop = True
+  elif FLAGS.dataset == 'arrow':
+    dataset_builder = lambda **kwargs: data_utils.build_arrow(data_path=FLAGS.data_path,**kwargs)
+    crop = False
+  else:
+    raise RuntimeError('unknown dataset')
+
+  data_iterator = data_utils.build_iterator(
+      dataset_builder, batch_size, split="train", resolution=resolution, shuffle=True,
+      max_n_objects=6, get_properties=False, apply_crop=crop)
 
   optimizer = tf.keras.optimizers.Adam(base_learning_rate, epsilon=1e-08)
 

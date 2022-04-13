@@ -146,7 +146,8 @@ class SlotAttentionAutoEncoder(layers.Layer):
         layers.Conv2D(64, kernel_size=5, padding="SAME", activation="relu")
     ], name="encoder_cnn")
 
-    self.decoder_initial_size = (8, 8)
+    assert (np.int32(resolution) // 16 > 0).all() and (np.int32(resolution) % 16 == 0).all()
+    self.decoder_initial_size = (resolution[0] // 16, resolution[1] // 16)
     self.decoder_cnn = tf.keras.Sequential([
         layers.Conv2DTranspose(
             64, 5, strides=(2, 2), padding="SAME", activation="relu"),

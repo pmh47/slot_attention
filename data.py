@@ -115,8 +115,27 @@ def build_clevr(split, resolution=(128, 128), shuffle=False, max_n_objects=10,
   return ds
 
 
-def build_clevr_iterator(batch_size, split, **kwargs):
-  ds = build_clevr(split=split, **kwargs)
+def build_arrow(split, data_path, resolution=(128, 128), shuffle=False, max_n_objects=4,
+                get_properties=True, apply_crop=False):
+  """Build arrow-room dataset."""
+
+  ds = tf.data.Dataset.list_files(f'{data_path}/{split}/images/*/*.png', shuffle=shuffle)
+  ds = ds.map(lambda filename: {'image': tf.io.decode_png(tf.io.read_file(filename))[..., :3]})
+
+  assert max_n_objects >= 4  # ...as that's how many arrow-room always has
+  assert not get_properties  # ...because we don't want to bother loading these for now
+  assert not apply_crop  # ...because our images are already small and square
+
+  def _preprocess_fn(x, resolution, max_n_objects=max_n_objects):
+    return preprocess_clevr(
+        x, resolution, apply_crop=False, get_properties=False,
+        max_n_objects=max_n_objects)
+  ds = ds.map(lambda x: _preprocess_fn(x, resolution))
+  return ds
+
+
+def build_iterator(build_dataset, batch_size, split, **kwargs):
+  ds = build_dataset(split=split, **kwargs)
   ds = ds.repeat(-1)
   ds = ds.batch(batch_size, drop_remainder=True)
   return iter(ds)
