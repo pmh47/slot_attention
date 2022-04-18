@@ -115,7 +115,7 @@ def build_clevr(split, resolution=(128, 128), shuffle=False, max_n_objects=10,
   return ds
 
 
-def build_arrow(split, data_path, resolution=(128, 128), shuffle=False, max_n_objects=4,
+def build_ood(split, data_path, resolution=(128, 128), shuffle=False, max_n_objects=4,
                 get_properties=True, apply_crop=False):
   """Build arrow-room dataset."""
 

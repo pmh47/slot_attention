@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: sa-clevr
+  name: sa-arrow
   namespace: paulhproject
 spec:
   backoffLimit: 0

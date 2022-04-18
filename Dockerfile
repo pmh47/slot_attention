@@ -11,7 +11,7 @@ RUN mkdir /root/workspace
 RUN mkdir /root/tensorflow_datasets
 RUN chmod -R 777 /root
 
-# run with:
+# run (locally) with:
 # docker run --gpus all -p 8888:8888 --mount type=bind,source=$HOME/projects/o3d-nerf,target=/root/workspace --mount type=bind,source=$HOME/tensorflow_datasets,target=/root/tensorflow_datasets -it pmh47/slot_attention
 # port forwarding (-p 8888:8888) is only required for jupyter
 

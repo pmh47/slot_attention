@@ -84,8 +84,8 @@ def main(argv):
   if FLAGS.dataset == 'clevr':
     dataset_builder = data_utils.build_clevr
     crop = True
-  elif FLAGS.dataset == 'arrow':
-    dataset_builder = lambda **kwargs: data_utils.build_arrow(data_path=FLAGS.data_path,**kwargs)
+  elif FLAGS.dataset == 'ood':
+    dataset_builder = lambda **kwargs: data_utils.build_ood(data_path=FLAGS.data_path,**kwargs)
     crop = False
   else:
     raise RuntimeError('unknown dataset')
