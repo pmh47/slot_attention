@@ -3,9 +3,12 @@ FROM tensorflow/tensorflow:latest-gpu
 RUN pip install \
     absl-py>=0.9.0 \
     matplotlib>=3.0.0 \
-    tensorflow-datasets>=3.0.0 \
     scipy \
     notebook
+
+# This is only required for training on original clevr data
+# RUN pip install tensorflow-datasets>=3.0.0
+
 
 RUN mkdir /root/workspace
 RUN mkdir /root/tensorflow_datasets

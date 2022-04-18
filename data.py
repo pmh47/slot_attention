@@ -16,7 +16,6 @@
 """Data utils."""
 import collections
 import tensorflow as tf
-import tensorflow_datasets as tfds
 
 
 def preprocess_clevr(features, resolution, apply_crop=False,
@@ -77,6 +76,7 @@ def preprocess_clevr(features, resolution, apply_crop=False,
 def build_clevr(split, resolution=(128, 128), shuffle=False, max_n_objects=10,
                 num_eval_examples=512, get_properties=True, apply_crop=False):
   """Build CLEVR dataset."""
+  import tensorflow_datasets as tfds
   if split == "train" or split == "train_eval":
     ds = tfds.load("clevr:3.1.0", split="train", shuffle_files=shuffle)
     if split == "train":
