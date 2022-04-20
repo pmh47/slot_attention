@@ -1,14 +1,17 @@
 FROM tensorflow/tensorflow:latest-gpu
 
+RUN pip install torch torchvision --extra-index-url https://download.pytorch.org/whl/cu113
+
 RUN pip install \
-    absl-py>=0.9.0 \
-    matplotlib>=3.0.0 \
+    absl-py \
+    matplotlib \
     scipy \
-    notebook
+    notebook \
+    pytorch-ignite \
+    scikit-learn
 
 # This is only required for training on original clevr data
 # RUN pip install tensorflow-datasets>=3.0.0
-
 
 RUN mkdir /root/workspace
 RUN mkdir /root/tensorflow_datasets
@@ -21,3 +24,4 @@ RUN chmod -R 777 /root
 # can then use:
 # PYTHONPATH=. python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/object_discovery
 # jupyter notebook --allow-root --ip=0.0.0.0 --no-browser
+# PYTHONPATH=.:src python slot_attention/object_discovery/evaluate.py
