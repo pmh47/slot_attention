@@ -21,7 +21,7 @@ flags.DEFINE_string("data_path", "/root/workspace/data/arrow", "Root folder for 
 flags.DEFINE_string("split", "train", "Which train/test/ood* split to use.")
 flags.DEFINE_string("ckpt_path", "/root/workspace/slot_attention/checkpoints/arrow_2022-04-19", "Where to load the checkpoint from.")
 flags.DEFINE_string("out_path", "", "Where to write reconstruction/mask images.")
-flags.DEFINE_string("dataset", "clevr", "Which dataset to use")
+flags.DEFINE_string("metrics_filename", "/tmp/statistics.txt", "Filename to write final metric values as text.")
 flags.DEFINE_integer("resolution", 96, "Image resolution")
 flags.DEFINE_integer("num_slots", 5, "Number of slots in Slot Attention.")
 flags.DEFINE_integer("num_iterations", 3, "Number of attention iterations.")
@@ -203,8 +203,10 @@ def main(argv):
                 ax[i].axis('off')
             plt.savefig('/root/workspace/wibl.png')
 
-    for metric, values in metric_to_values.items():
-        print(f'{metric}: {np.mean(values)}')
+    with open(FLAGS.metrics_filename, 'wt') as f:
+        for metric, values in metric_to_values.items():
+            print(f'{metric}: {np.mean(values)}')
+            f.write(f'{metric}: {np.mean(values)}\n')
 
 
 if __name__ == '__main__':
