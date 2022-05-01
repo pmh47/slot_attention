@@ -1,5 +1,7 @@
 import os
 import numpy as np
+from absl import app
+from absl import flags
 from tqdm import tqdm
 from collections import defaultdict
 
@@ -14,19 +16,20 @@ import evaluation.metrics as metrics
 from model.loss import img2mse, mse2psnr
 
 
-num_slots = 5
-num_iterations = 3
-resolution = (96, 96)
-data_path = '/root/workspace/data/arrow'
-ckpt_path = '/root/workspace/slot_attention/checkpoints/arrow_2022-04-19'
-out_path = '/root/workspace/slot_attention/eval-images/arrow_2022-04-19'
-split = 'train'
-frame_indices = [0, 15]
+FLAGS = flags.FLAGS
+flags.DEFINE_string("data_path", "/root/workspace/data/arrow", "Root folder for the dataset.")
+flags.DEFINE_string("split", "train", "Which train/test/ood* split to use.")
+flags.DEFINE_string("ckpt_path", "/root/workspace/slot_attention/checkpoints/arrow_2022-04-19", "Where to load the checkpoint from.")
+flags.DEFINE_string("out_path", "", "Where to write reconstruction/mask images.")
+flags.DEFINE_string("dataset", "clevr", "Which dataset to use")
+flags.DEFINE_integer("resolution", 96, "Image resolution")
+flags.DEFINE_integer("num_slots", 5, "Number of slots in Slot Attention.")
+flags.DEFINE_integer("num_iterations", 3, "Number of attention iterations.")
 
 
 def load_model(checkpoint_dir, num_slots=11, num_iters=3, batch_size=16):
     model = model_utils.build_model(
-        resolution, batch_size, num_slots, num_iters,
+        (FLAGS.resolution, FLAGS.resolution), batch_size, num_slots, num_iters,
         model_type="object_discovery")
 
     ckpt = tf.train.Checkpoint(network=model)
@@ -55,7 +58,7 @@ def get_prediction(model, image):
     return recon_combined, recons, masks, slots
 
 
-def load_gqn_masks(scene_index):
+def load_gqn_masks(scene_index, frame_indices):
 
     def convert_masks(gt_masks):
         # Duplicated from o3d-nerf / data / gqn
@@ -66,19 +69,19 @@ def load_gqn_masks(scene_index):
         return F.one_hot(inverse_indices)
 
     rgb_masks = [
-        tf.io.decode_png(tf.io.read_file(f'{data_path}/{split}/masks/{scene_index}/{frame_index}.png'))[..., :3]
+        tf.io.decode_png(tf.io.read_file(f'{FLAGS.data_path}/{FLAGS.split}/masks/{scene_index}/{frame_index}.png'))[..., :3]
         for frame_index in frame_indices
     ]
     return convert_masks(rgb_masks)
 
 
-def load_clevr_masks(scene_index):
+def load_clevr_masks(scene_index, frame_indices):
 
     def load_for_frame(frame_index):
         masks_for_frame = []
         object_index = 1
         while True:
-            mask_filename = f'{data_path}/{split}/masks/{scene_index}/{frame_index}/{object_index}_modal001.png'
+            mask_filename = f'{FLAGS.data_path}/{FLAGS.split}/masks/{scene_index}/{frame_index}/{object_index}_modal001.png'
             if not os.path.exists(mask_filename):
                 break
             masks_for_frame.append(tf.io.decode_png(tf.io.read_file(mask_filename))[..., 0] / 255)
@@ -95,11 +98,11 @@ def load_clevr_masks(scene_index):
     return torch.from_numpy(masks_by_frame.numpy()).permute(0, 2, 3, 1)  # frame, y, x, object
 
 
-def get_background_slot_index(model, num_scenes=100):
+def get_background_slot_index(model, num_frames, num_scenes=100):
     
     # Run the model on single frames from many scenes, and check which slot is the most-common; assign this as background
     frames = [
-        tf.io.decode_png(tf.io.read_file(f'{data_path}/{split}/images/{scene_index}/{frame_indices[scene_index % len(frame_indices)]}.png'))[..., :3]
+        tf.io.decode_png(tf.io.read_file(f'{FLAGS.data_path}/{FLAGS.split}/images/{scene_index}/{scene_index % num_frames}.png'))[..., :3]
         for scene_index in range(num_scenes)
     ]
     frames = tf.cast(frames, tf.float32) / 255.
@@ -108,35 +111,32 @@ def get_background_slot_index(model, num_scenes=100):
     binary_masks = F.one_hot(soft_masks.argmax(dim=1), soft_masks.shape[1])  # frame, y, x, slot
     return binary_masks.sum(dim=(0, 1, 2)).argmax()
 
-    # slot_ordering = binary_masks.sum(dim=(0, 1)).argsort()  # sort ascending, so the slot with most pixels (hopefully the background!) goes last
 
-    return most_frequent_index
-
-
-def main():
+def main(argv):
 
     tf.config.experimental.set_memory_growth(tf.config.list_physical_devices('GPU')[0], True)
 
-    num_scenes = len(os.listdir(f'{data_path}/{split}/images'))
-    num_frames = len(os.listdir(f'{data_path}/{split}/images/0'))  # we assume it's equal for all scenes
-    assert all(frame_index < num_frames for frame_index in frame_indices)
+    num_scenes = len(os.listdir(f'{FLAGS.data_path}/{FLAGS.split}/images'))
+    num_frames = len(os.listdir(f'{FLAGS.data_path}/{FLAGS.split}/images/0'))  # we assume it's equal for all scenes
 
-    model = load_model(ckpt_path, num_slots=num_slots, num_iters=num_iterations, batch_size=len(frame_indices))
+    model = load_model(FLAGS.ckpt_path, num_slots=FLAGS.num_slots, num_iters=FLAGS.num_iterations, batch_size=1)
 
-    background_slot_index = get_background_slot_index(model)
+    background_slot_index = get_background_slot_index(model, num_frames)
     print(f'chose slot {background_slot_index} as background')
 
     metric_to_values = defaultdict(lambda: [])
     for scene_index in tqdm(range(num_scenes)):
 
+        frame_indices = [scene_index % num_frames]  # match o3d-nerf evaluation, which uses one cyclically-varying frame per scene
+
         frames = [
-            tf.io.decode_png(tf.io.read_file(f'{data_path}/{split}/images/{scene_index}/{frame_index}.png'))[..., :3]
+            tf.io.decode_png(tf.io.read_file(f'{FLAGS.data_path}/{FLAGS.split}/images/{scene_index}/{frame_index}.png'))[..., :3]
             for frame_index in frame_indices
         ]
         frames = tf.cast(frames, tf.float32) / 255.
-        assert frames.shape[1:3] == resolution
+        assert frames.shape[1:3] == (FLAGS.resolution, FLAGS.resolution)
 
-        gt_masks = (load_gqn_masks if 'gqn' in data_path else load_clevr_masks)(scene_index)  # frame, slot, y, x
+        gt_masks = (load_gqn_masks if 'gqn' in FLAGS.data_path else load_clevr_masks)(scene_index, frame_indices)  # frame, slot, y, x
 
         recon_combined, recons, masks, slots = get_prediction(model, frames)
         # recon_combined :: frame, y, x, rgb
@@ -169,8 +169,7 @@ def main():
             metric_to_values['segmentations_IOU'].append(metrics.iou_for_frame(binary_masks, gt_masks_for_frame))
             metric_to_values['segmentations_FG_IOU'].append(metrics.iou_for_frame(binary_masks[..., :-1], gt_masks_for_frame[..., 1:]))
 
-
-        if False:
+        if FLAGS.out_path != '':
             # Write reconstruction and mask images
             scene_out_path = f'{out_path}/{scene_index}'
             os.makedirs(scene_out_path, exist_ok=True)
@@ -209,5 +208,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    app.run(main)
 
