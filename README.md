@@ -8,8 +8,8 @@ To train on gqn or arrow, with specified numbers of slots:
 
 ```
 PYTHONPATH=.. python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/arrow --dataset ood --data_path data/arrow --resolution 96 --num_slots 5
-PYTHONPATH=.. python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/gqn --dataset ood --data_path data/gqn --resolution 96 --num_slots 5
-PYTHONPATH=.. python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/gqn_7-slot --dataset ood --data_path data/gqn --resolution 96 --num_slots 7
+PYTHONPATH=.. python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/gqn_5-slot --dataset ood --data_path data/gqn --resolution 80 --num_slots 5
+PYTHONPATH=.. python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/gqn_7-slot --dataset ood --data_path data/gqn --resolution 80 --num_slots 7
 ```
 
 ## Original Introduction
