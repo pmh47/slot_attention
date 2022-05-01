@@ -8,7 +8,8 @@ RUN pip install \
     scipy \
     notebook \
     pytorch-ignite \
-    scikit-learn
+    scikit-learn \
+    tqdm
 
 # This is only required for training on original clevr data
 # RUN pip install tensorflow-datasets>=3.0.0
