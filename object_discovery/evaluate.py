@@ -25,6 +25,7 @@ flags.DEFINE_string("metrics_filename", "/tmp/statistics.txt", "Filename to writ
 flags.DEFINE_integer("resolution", 96, "Image resolution")
 flags.DEFINE_integer("num_slots", 5, "Number of slots in Slot Attention.")
 flags.DEFINE_integer("num_iterations", 3, "Number of attention iterations.")
+flags.DEFINE_integer("num_scenes", 100, "Number of scenes to evaluate.")
 
 
 def load_model(checkpoint_dir, num_slots=11, num_iters=3, batch_size=16):
@@ -119,6 +120,10 @@ def main(argv):
     num_scenes = len(os.listdir(f'{FLAGS.data_path}/{FLAGS.split}/images'))
     num_frames = len(os.listdir(f'{FLAGS.data_path}/{FLAGS.split}/images/0'))  # we assume it's equal for all scenes
 
+    assert FLAGS.num_scenes <= num_scenes
+    print(f'evaluating on {FLAGS.num_scenes} / {num_scenes} scenes')
+    num_scenes = FLAGS.num_scenes
+
     model = load_model(FLAGS.ckpt_path, num_slots=FLAGS.num_slots, num_iters=FLAGS.num_iterations, batch_size=1)
 
     background_slot_index = get_background_slot_index(model, num_frames)
@@ -171,12 +176,12 @@ def main(argv):
 
         if FLAGS.out_path != '':
             # Write reconstruction and mask images
-            scene_out_path = f'{out_path}/{scene_index}'
+            scene_out_path = f'{FLAGS.out_path}/{scene_index}'
             os.makedirs(scene_out_path, exist_ok=True)
             def write_png(rgb, suffix):
                 tf.io.write_file(
                     f'{scene_out_path}/{frame_indices[frame_index_index]}_{suffix}.png',
-                    tf.io.encode_png(tf.cast(rgb * 255., tf.uint8))
+                    tf.io.encode_png(tf.cast(tf.clip_by_value(rgb, 0., 1.) * 255., tf.uint8))
                 )
             for frame_index_index in range(len(frame_indices)):
                 write_png(recon_combined[frame_index_index], 'recon')
