@@ -113,6 +113,18 @@ def get_background_slot_index(model, num_frames, num_scenes=100):
     return binary_masks.sum(dim=(0, 1, 2)).argmax()
 
 
+def masks_to_rgb_segmentation(masks):
+
+    # masks :: y, x, slot; assumed to be 1-hit, with last slot being background
+
+    segmentation_colours = np.asarray(
+        [[50, 168, 82], [50, 82, 168], [153, 140, 38], [158, 30, 105], [158, 30, 30], [87, 156, 79],
+         [50, 20, 82], [50, 10, 168], [10, 140, 38], [250, 30, 105], [158, 250, 250], [250, 20, 79]],
+    ) / 255.
+
+    return (masks[..., :-1, None] * segmentation_colours[:masks.shape[2] - 1]).sum(axis=-2)
+
+
 def main(argv):
 
     tf.config.experimental.set_memory_growth(tf.config.list_physical_devices('GPU')[0], True)
@@ -187,6 +199,7 @@ def main(argv):
                 write_png(recon_combined[frame_index_index], 'recon')
                 for slot_index in range(masks.shape[1]):
                     write_png(tf.tile(masks[frame_index_index, slot_index], [1, 1, 3]), f'mask-{slot_index}')
+                write_png(masks_to_rgb_segmentation(binary_masks), 'segmentation')
 
         if False:
             # Visualize masked per-slot reconstructions
