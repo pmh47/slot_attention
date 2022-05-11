@@ -69,10 +69,10 @@ def load_gqn_masks(scene_index, frame_indices):
         return F.one_hot(inverse_indices)
 
     rgb_masks = [
-        tf.io.decode_png(tf.io.read_file(f'{FLAGS.data_path}/{FLAGS.split}/masks/{scene_index}/{frame_index}.png'))[..., :3]
+        tf.io.decode_png(tf.io.read_file(f'{FLAGS.data_path}/{FLAGS.split}/masks/{scene_index}/{frame_index}.png'))[..., :3].numpy()
         for frame_index in frame_indices
     ]
-    return convert_masks(rgb_masks)
+    return convert_masks(np.stack(rgb_masks))
 
 
 def load_clevr_masks(scene_index, frame_indices):
