@@ -32,6 +32,7 @@ flags.DEFINE_string("model_dir", "/tmp/object_discovery/",
                     "Where to save the checkpoints.")
 flags.DEFINE_string("dataset", "clevr", "Which dataset to use")
 flags.DEFINE_string("data_path", "", "Root folder for the dataset (ignored for clevr)")
+flags.DEFINE_integer("max_num_frames", 0, "Maximum number of frames per scene (ignored for clevr)")
 flags.DEFINE_integer("resolution", 128, "Image resolution")
 flags.DEFINE_integer("seed", 0, "Random seed.")
 flags.DEFINE_integer("batch_size", 64, "Batch size for the model.")
@@ -85,7 +86,9 @@ def main(argv):
     dataset_builder = data_utils.build_clevr
     crop = True
   elif FLAGS.dataset == 'ood':
-    dataset_builder = lambda **kwargs: data_utils.build_ood(data_path=FLAGS.data_path,**kwargs)
+    if 'arrow' in FLAGS.data_path and (FLAGS.max_num_frames == 0 or FLAGS.max_num_frames > 10):
+      assert False, 'for arrow, beware train images 10-30 have ood viewpoints! you probably want to set --max_num_frames'
+    dataset_builder = lambda **kwargs: data_utils.build_ood(data_path=FLAGS.data_path, max_num_frames=FLAGS.max_num_frames,**kwargs)
     crop = False
   else:
     raise RuntimeError('unknown dataset')

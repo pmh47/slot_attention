@@ -15,6 +15,7 @@
 
 """Data utils."""
 import collections
+from glob import glob
 import tensorflow as tf
 
 
@@ -116,10 +117,20 @@ def build_clevr(split, resolution=(128, 128), shuffle=False, max_n_objects=10,
 
 
 def build_ood(split, data_path, resolution=(128, 128), shuffle=False, max_n_objects=4,
-                get_properties=True, apply_crop=False):
+                get_properties=True, apply_crop=False, max_num_frames=0):
   """Build arrow-room dataset."""
 
-  ds = tf.data.Dataset.list_files(f'{data_path}/{split}/images/*/*.png', shuffle=shuffle)
+  def get_images_for_folder(folder):
+    if max_num_frames == 0:
+        return glob(f'{folder}/*.png')
+    else:
+        return [f'{folder}/{frame_idx}.png' for frame_idx in range(max_num_frames)]
+
+  image_folders = sorted(glob(f'{data_path}/{split}/images/*'))
+  filenames = sum(map(get_images_for_folder, image_folders), [])
+  ds = tf.data.Dataset.from_tensor_slices(filenames)
+  if shuffle:
+    ds = ds.shuffle(1024)
   ds = ds.map(lambda filename: {'image': tf.io.decode_png(tf.io.read_file(filename))[..., :3]})
 
   assert max_n_objects >= 4  # ...as that's how many arrow-room always has
