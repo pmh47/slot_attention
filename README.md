@@ -52,6 +52,19 @@ First, clone our model's repository to the same directory as Slot-attention (i.e
 git clone https://github.com/Anciukevicius/o3d-nerf.git
 ```
 
+Secondly, update the following paths in `slot_attention/object_discovery/evaluate_all.sh` to your own best runs (absolute paths).
+```
+GQN_DATA_PATH=/root/workspace/data/gqn
+GQN_CKPT_PATH=/root/workspace/slot_attention/checkpoints/gqn_2022-04-13
+GQN_RESULTS_FILENAME=./gqn_slot-attn_results.txt
+GQN_NUM_SLOTS=5
+
+ARROW_DATA_PATH=/root/workspace/data/arrow
+ARROW_CKPT_PATH=/root/workspace/slot_attention/checkpoints/arrow_2022-04-19
+ARROW_RESULTS_FILENAME=./arrow_slot-attn_results.txt
+ARROW_NUM_SLOTS=5
+```
+
 Then run 
 ```
 export PYTHONPATH=.; . slot_attention/object_discovery/evaluate_all.sh
