@@ -199,6 +199,8 @@ def main(argv):
                 write_png(recon_combined[frame_index_index], 'recon')
                 for slot_index in range(masks.shape[1]):
                     write_png(tf.tile(masks[frame_index_index, slot_index], [1, 1, 3]), f'mask-{slot_index}')
+                    masked_rgb = recons[frame_index_index, slot_index] * masks[frame_index_index, slot_index] + (1. - masks[frame_index_index, slot_index])
+                    write_png(masked_rgb, f'masked-rgb-{slot_index}')
                 write_png(masks_to_rgb_segmentation(binary_masks), 'segmentation')
 
         if False:
