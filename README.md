@@ -1,17 +1,76 @@
 # Slot Attention
 
-## Training on  OOD datasets
+## 1. Get datasets 
+First get the datasets by downloading directly with gdown:
+```
+pip install gdown
+gdown --no-cookies --folder https://drive.google.com/drive/folders/1M9Xi7Q3OMKourxsB0GPbKE7Znaoa22Dm?usp=sharing
+gdown --no-cookies --folder https://drive.google.com/drive/folders/13cIwzexRD5IIgoNIxsqhyej7Y4cO-ukT?usp=sharing 
+```
+If above fails then download individually:
+
+```
+mkdir data; cd data
+mkdir arrow; cd arrow
+gdown 1ysbYap251n14d3gqZLQB2rL8vXjqvJQK
+gdown 1pB0xXB3hrwMhl_qZO11kNs8V9kQRNWd-
+cd ..
+mkdir gqn; cd gqn
+gdown 1yVMnr0VZZAU5VarLgb_-lMyMpHlUYpcI
+gdown 1Ht6jOxLSyG1d1GF7RUEWteDkunspz_qE-
+```
+
+Untar and unzip datasets, e.g.:
+```
+tar -xvzf train.tar.gz
+unzip gqn.zip
+```
+
+The place of the datasets (can use soft link) should be in
+```
+slot_attention/data/arrow
+slot_attention/data/gqn
+```
+
+i.e. "ls slot_attention/data/gqn" should contain "OODfgbg"  "OODposition"  "OODviews" folders
+
+## 2. Training on  OOD datasets
 
 As below, install dependencies with `pip install -r requirements.txt`
 
 To train on gqn or arrow, with specified numbers of slots:
 
 ```
-PYTHONPATH=.. python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/arrow --dataset ood --data_path data/arrow --resolution 96 --num_slots 5
-PYTHONPATH=.. python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/gqn_5-slot --dataset ood --data_path data/gqn --resolution 80 --num_slots 5
-PYTHONPATH=.. python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/gqn_7-slot --dataset ood --data_path data/gqn --resolution 80 --num_slots 7
+export PYTHONPATH=.; python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/arrow --dataset ood --data_path slot_attention/data/arrow --resolution 96 --num_slots 5
+export PYTHONPATH=.; python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/gqn_5-slot --dataset ood --data_path slot_attention/data/gqn --resolution 80 --num_slots 5
+export PYTHONPATH=.; python slot_attention/object_discovery/train.py  --model_dir slot_attention/checkpoints/gqn_7-slot --dataset ood --data_path slot_attention/data/gqn --resolution 80 --num_slots 7
 ```
 
+## 3. Evaluation
+First, clone our model's repository to the same directory as Slot-attention (i.e. the folder should contain both o3d-nerf and slot_attention directories)
+```
+git clone https://github.com/Anciukevicius/o3d-nerf.git
+```
+
+Secondly, update the following paths in `slot_attention/object_discovery/evaluate_all.sh` to your own best runs (absolute paths).
+```
+GQN_DATA_PATH=/root/workspace/data/gqn
+GQN_CKPT_PATH=/root/workspace/slot_attention/checkpoints/gqn_2022-04-13
+GQN_RESULTS_FILENAME=./gqn_slot-attn_results.txt
+GQN_NUM_SLOTS=5
+
+ARROW_DATA_PATH=/root/workspace/data/arrow
+ARROW_CKPT_PATH=/root/workspace/slot_attention/checkpoints/arrow_2022-04-19
+ARROW_RESULTS_FILENAME=./arrow_slot-attn_results.txt
+ARROW_NUM_SLOTS=5
+```
+
+Then run 
+```
+export PYTHONPATH=.; . slot_attention/object_discovery/evaluate_all.sh
+```
+
+## Ignore the rest:
 ## Original Introduction
 
 This is a reference implementation for "Object-Centric Learning with Slot
