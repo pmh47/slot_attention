@@ -39,6 +39,7 @@ flags.DEFINE_integer("batch_size", 64, "Batch size for the model.")
 flags.DEFINE_integer("num_slots", 7, "Number of slots in Slot Attention.")
 flags.DEFINE_integer("num_iterations", 3, "Number of attention iterations.")
 flags.DEFINE_float("learning_rate", 0.0004, "Learning rate.")
+flags.DEFINE_float("cpt_var_reg_weight", 1.e-1, "Component-variance loss weight.")
 flags.DEFINE_integer("num_train_steps", 500000, "Number of training steps.")
 flags.DEFINE_integer("warmup_steps", 10000,
                      "Number of warmup steps for the learning rate.")
@@ -58,6 +59,20 @@ def train_step(batch, model, optimizer):
     preds = model(batch["image"], training=True)
     recon_combined, recons, masks, slots = preds
     loss_value = utils.l2_loss(batch["image"], recon_combined)
+    # print(recons.shape)
+    if False:  # original
+      cpt_var_loss = tf.reduce_mean(tf.math.reduce_variance(recons, axis=(2, 3)))
+    elif False:  # 'v2'
+      sum_masks = tf.reduce_sum(masks, axis=(2, 3), keepdims=True)
+      cpt_means = tf.reduce_sum(recons * masks, axis=(2, 3), keepdims=True) / sum_masks
+      cpt_var_loss = tf.reduce_mean(tf.reduce_sum(((recons - cpt_means) * masks) ** 2, axis=(2, 3), keepdims=True) / sum_masks)
+    else:  # 'v3'
+      masks_sg = tf.stop_gradient(masks)
+      sum_masks = tf.reduce_sum(masks_sg, axis=(2, 3), keepdims=True)
+      cpt_means = tf.reduce_sum(recons * masks_sg, axis=(2, 3), keepdims=True) / sum_masks
+      cpt_var_loss = tf.reduce_mean(tf.reduce_sum(((recons - cpt_means) * masks_sg) ** 2, axis=(2, 3), keepdims=True) / sum_masks)
+    loss_value += cpt_var_loss * FLAGS.cpt_var_reg_weight
+    # tf.print(cpt_var_loss, loss_value)
     del recons, masks, slots  # Unused.
 
   # Get and apply gradients.
