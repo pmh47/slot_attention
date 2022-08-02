@@ -21,7 +21,7 @@ flags.DEFINE_string("data_path", "/root/workspace/data/arrow", "Root folder for 
 flags.DEFINE_string("split", "train", "Which train/test/ood* split to use.")
 flags.DEFINE_string("ckpt_path", "/root/workspace/slot_attention/checkpoints/arrow_2022-04-19", "Where to load the checkpoint from.")
 flags.DEFINE_string("out_path", "", "Where to write reconstruction/mask images.")
-flags.DEFINE_string("metrics_filename", "/tmp/statistics.txt", "Filename to write final metric values as text.")
+flags.DEFINE_string("metrics_filename", "/tmp/statistics", "Filename to write final metric values as text.")
 flags.DEFINE_integer("resolution", 96, "Image resolution")
 flags.DEFINE_integer("num_slots", 5, "Number of slots in Slot Attention.")
 flags.DEFINE_integer("num_iterations", 3, "Number of attention iterations.")
@@ -99,20 +99,6 @@ def load_clevr_masks(scene_index, frame_indices):
     return torch.from_numpy(masks_by_frame.numpy()).permute(0, 2, 3, 1)  # frame, y, x, object
 
 
-def get_background_slot_index(model, num_frames, num_scenes=100):
-    
-    # Run the model on single frames from many scenes, and check which slot is the most-common; assign this as background
-    frames = [
-        tf.io.decode_png(tf.io.read_file(f'{FLAGS.data_path}/{FLAGS.split}/images/{scene_index}/{scene_index % num_frames}.png'))[..., :3]
-        for scene_index in range(num_scenes)
-    ]
-    frames = tf.cast(frames, tf.float32) / 255.
-    _, _, soft_masks, _ = get_prediction(model, frames)  # frame, slot, y, x, singleton
-    soft_masks = torch.from_numpy(soft_masks.numpy()).squeeze(-1)
-    binary_masks = F.one_hot(soft_masks.argmax(dim=1), soft_masks.shape[1])  # frame, y, x, slot
-    return binary_masks.sum(dim=(0, 1, 2)).argmax()
-
-
 def masks_to_rgb_segmentation(masks):
 
     # masks :: y, x, slot; assumed to be 1-hit, with last slot being background
@@ -138,9 +124,6 @@ def main(argv):
 
     model = load_model(FLAGS.ckpt_path, num_slots=FLAGS.num_slots, num_iters=FLAGS.num_iterations, batch_size=1)
 
-    background_slot_index = get_background_slot_index(model, num_frames)
-    print(f'chose slot {background_slot_index} as background')
-
     metric_to_values = defaultdict(lambda: [])
     for scene_index in tqdm(range(num_scenes)):
 
@@ -153,7 +136,7 @@ def main(argv):
         frames = tf.cast(frames, tf.float32) / 255.
         assert frames.shape[1:3] == (FLAGS.resolution, FLAGS.resolution)
 
-        gt_masks = (load_gqn_masks if 'gqn' in FLAGS.data_path else load_clevr_masks)(scene_index, frame_indices)  # frame, slot, y, x
+        gt_masks = (load_gqn_masks if 'gqn' in FLAGS.data_path else load_clevr_masks)(scene_index, frame_indices)  # frame, y, x, slot
 
         recon_combined, recons, masks, slots = get_prediction(model, frames)
         # recon_combined :: frame, y, x, rgb
@@ -174,6 +157,9 @@ def main(argv):
             metric_to_values['psnr'].append(mse2psnr(mse).item())
 
             binary_masks = F.one_hot(soft_masks.argmax(dim=0), num_classes=soft_masks.shape[0])  # y, x, slot
+            # background_slot_index = binary_masks.sum(dim=(0, 1)).argmax()  # decide this per-frame, as the random slot initialisation may result in inconsistent assignments
+            gt_bg_mask = gt_masks_for_frame[..., :1]  # y, x, singleton
+            background_slot_index = ((binary_masks * gt_bg_mask).sum((0, 1)) / (torch.maximum(binary_masks, gt_bg_mask).sum((0, 1)) + 1.)).argmax()  # decide this per-frame, as the random slot initialisation may result in inconsistent assignments
             binary_masks = torch.cat([
                 binary_masks[..., :background_slot_index],
                 binary_masks[..., background_slot_index + 1 :],
@@ -196,6 +182,7 @@ def main(argv):
                     tf.io.encode_png(tf.cast(tf.clip_by_value(rgb, 0., 1.) * 255., tf.uint8))
                 )
             for frame_index_index in range(len(frame_indices)):
+                write_png(frames[frame_index_index], 'input')
                 write_png(recon_combined[frame_index_index], 'recon')
                 for slot_index in range(masks.shape[1]):
                     write_png(tf.tile(masks[frame_index_index, slot_index], [1, 1, 3]), f'mask-{slot_index}')
@@ -223,10 +210,22 @@ def main(argv):
                 ax[i].axis('off')
             plt.savefig('/root/workspace/wibl.png')
 
-    with open(FLAGS.metrics_filename, 'wt') as f:
+    with open(FLAGS.metrics_filename + '.txt', 'wt') as f:
         for metric, values in metric_to_values.items():
-            print(f'{metric}: {np.mean(values)}')
-            f.write(f'{metric}: {np.mean(values)}\n')
+            print(f'{metric}: {np.nanmean(values)}')
+            f.write(f'{metric}: {np.nanmean(values)}\n')
+    with open(FLAGS.metrics_filename + '.metrics.txt', 'wt') as f:
+        for metric, values in metric_to_values.items():
+            f.write(f'{metric},')
+        f.write('\n')
+    with open(FLAGS.metrics_filename + '.mean.txt', 'wt') as f:
+        for metric, values in metric_to_values.items():
+            f.write(f'{np.nanmean(values)},')
+        f.write('\n')
+    with open(FLAGS.metrics_filename + '.std.txt', 'wt') as f:
+        for metric, values in metric_to_values.items():
+            f.write(f'{np.nanstd(values)},')
+        f.write('\n')
 
 
 if __name__ == '__main__':
