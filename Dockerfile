@@ -9,7 +9,8 @@ RUN pip install \
     notebook \
     pytorch-ignite \
     scikit-learn \
-    tqdm
+    tqdm \
+    tensorflow_probability
 
 # This is only required for training on original clevr data
 # RUN pip install tensorflow-datasets>=3.0.0

@@ -1,11 +1,13 @@
 import os
 import numpy as np
+import sklearn.mixture
 from absl import app
 from absl import flags
 from tqdm import tqdm
 from collections import defaultdict
 
 import tensorflow as tf
+import tensorflow_probability as tfp
 import torch
 import torch.nn.functional as F
 
@@ -26,19 +28,23 @@ flags.DEFINE_integer("resolution", 96, "Image resolution")
 flags.DEFINE_integer("num_slots", 5, "Number of slots in Slot Attention.")
 flags.DEFINE_integer("num_iterations", 3, "Number of attention iterations.")
 flags.DEFINE_integer("num_scenes", 100, "Number of scenes to evaluate.")
+flags.DEFINE_boolean("mcmc", False, "Use MCMC inference.")
+flags.DEFINE_integer("num_cpts", 40, "Number of GMM components.")
+
+SLOT_SIZE = 64  # this is hard-coded in the original SlotAttention class!
 
 
 def load_model(checkpoint_dir, num_slots=11, num_iters=3, batch_size=16):
     model = model_utils.build_model(
         (FLAGS.resolution, FLAGS.resolution), batch_size, num_slots, num_iters,
-        model_type="object_discovery")
+        model_type="object_discovery" if not FLAGS.mcmc else "object_decoder")
 
     ckpt = tf.train.Checkpoint(network=model)
     ckpt_manager = tf.train.CheckpointManager(
         ckpt, directory=checkpoint_dir, max_to_keep=5)
 
     if ckpt_manager.latest_checkpoint:
-        ckpt.restore(ckpt_manager.latest_checkpoint)
+        ckpt.restore(ckpt_manager.latest_checkpoint).expect_partial()
         print("Restored from", ckpt_manager.latest_checkpoint)
     else:
         print("Initialised model from scratch")
@@ -46,17 +52,127 @@ def load_model(checkpoint_dir, num_slots=11, num_iters=3, batch_size=16):
     return model
 
 
-def get_prediction(model, image):
+def renormalize(x):
+    """Renormalize from [-1, 1] to [0, 1]."""
+    return x / 2. + 0.5
 
-    def renormalize(x):
-        """Renormalize from [-1, 1] to [0, 1]."""
-        return x / 2. + 0.5
+
+def get_prediction(model, image):
 
     recon_combined, recons, masks, slots = model(image * 2. - 1.)
     recon_combined = renormalize(recon_combined)
     recons = renormalize(recons)
 
     return recon_combined, recons, masks, slots
+
+
+class MCMC:
+
+    def __init__(self):
+
+        slots = np.load(FLAGS.ckpt_path + '/slots.npy')
+        slots = slots.reshape(-1, slots.shape[-1])
+        np.random.shuffle(slots)
+        slots = slots[:1000]
+        print(slots.shape)
+        self._gmm = sklearn.mixture.GaussianMixture(FLAGS.num_cpts, covariance_type='diag', verbose=True)
+        self._gmm.fit(slots)
+
+    def __call__(self, model, frames):
+
+        assert frames.shape[0] == 1
+
+        iterations = 5000
+        mh_frequency = 10
+        mala_adam_lr = 1.e-3
+        epsilon = 1.e-4  # std of LD normal perturbation
+        sigma = 0.025  # std of pixel likelihod
+
+        current_slots = tf.Variable(self._gmm.sample(FLAGS.num_slots)[0], dtype=tf.float32)  # slot, channel
+        current_mala_weights = None
+
+        def get_mse(slots):
+            recon_combined, _, _, _ = model(slots[None])
+            recon_combined = renormalize(recon_combined)  # 1, y, x, rgb
+            return tf.reduce_mean(tf.square(recon_combined - frames))
+
+        def get_gmm_proposal():
+
+            slot_index = tf.random.uniform(shape=[], maxval=current_slots.shape[0], dtype=tf.int32)
+            slot_current_value = current_slots[slot_index]
+            slot_new_value = self._gmm.sample()[0][0]
+            proposal_slots = tf.tensor_scatter_nd_update(current_slots, [[slot_index]], [slot_new_value])
+            log_Q_current_given_candidate = self._gmm.score([slot_current_value])
+            log_Q_candidate_given_current = self._gmm.score([slot_new_value])
+
+            return proposal_slots, None, log_Q_current_given_candidate, log_Q_candidate_given_current
+
+        def get_ld_proposal():
+
+            slots_copy = tf.Variable(current_slots)
+            optimizer = tf.keras.optimizers.Adam(learning_rate=mala_adam_lr)
+
+            def step():
+                with tf.GradientTape() as tape:
+                    mse_loss = get_mse(slots_copy)
+                d_loss_d_slots = tape.gradient(mse_loss, slots_copy)
+                optimizer.apply_gradients([(d_loss_d_slots, slots_copy)])
+
+            if current_mala_weights is not None:
+                step()  # force the optimizer to create its slots, so set_weights works
+                slots_copy.assign(current_slots)
+                optimizer.set_weights(current_mala_weights)
+
+            step()
+            proposal_mala_weights = optimizer.get_weights()
+            dist_from_current = tfp.distributions.Normal(slots_copy, epsilon)
+            proposal_slots = dist_from_current.sample()
+            slots_copy.assign(proposal_slots)
+            step()
+            dist_from_proposal = tfp.distributions.Normal(slots_copy, epsilon)
+
+            log_Q_candidate_given_current = tf.reduce_sum(dist_from_current.log_prob(proposal_slots))
+            log_Q_current_given_candidate = tf.reduce_sum(dist_from_proposal.log_prob(current_slots))
+
+            return proposal_slots, proposal_mala_weights, log_Q_current_given_candidate, log_Q_candidate_given_current
+
+        for iteration in range(iterations):
+
+            if iteration % mh_frequency == 0:
+                proposal_slots, proposal_mala_weights, log_Q_current_given_candidate, log_Q_candidate_given_current = get_gmm_proposal()
+            else:
+                proposal_slots, proposal_mala_weights, log_Q_current_given_candidate, log_Q_candidate_given_current = get_ld_proposal()
+
+            log_P_current = -get_mse(current_slots) / sigma**2  # ** we could cache this!
+            log_P_candidate = -get_mse(proposal_slots) / sigma**2  # ** we could also cache this for LD proposals
+            # log_alpha = (log_P_candidate - log_Q_candidate_given_current) - (log_P_current - log_Q_current_given_candidate)
+            log_alpha = log_P_candidate - log_P_current
+            criterion = min(1, np.exp(log_alpha))
+
+            # print(criterion, log_P_current, log_P_candidate, log_Q_current_given_candidate, log_Q_candidate_given_current)
+
+            if tf.random.uniform(shape=[]) < criterion:  # i.e. accept the proposal
+            # if log_P_candidate > log_P_current:
+            #     print('accept')
+                current_slots.assign(proposal_slots)
+                if proposal_mala_weights is not None:
+                    current_mala_weights = proposal_mala_weights
+            else:
+                # print(f'reject ({criterion:.2f})')
+                pass
+
+            if iteration % 100 == 0:
+                print(f'{iteration}: mse = {log_P_current}')
+                tf.io.write_file(f'{iteration:04}.png', tf.image.encode_png(tf.cast(tf.concat([
+                    tf.clip_by_value(renormalize(model(current_slots[None])[0][0]), 0., 1.),
+                    frames[0]
+                ], axis=1) * 255, tf.uint8)))
+
+        recon_combined, recons, masks, slots = model(current_slots[None])
+        recon_combined = renormalize(recon_combined)
+        recons = renormalize(recons)
+
+        return recon_combined, recons, masks, slots
 
 
 def load_gqn_masks(scene_index, frame_indices):
@@ -124,6 +240,8 @@ def main(argv):
 
     model = load_model(FLAGS.ckpt_path, num_slots=FLAGS.num_slots, num_iters=FLAGS.num_iterations, batch_size=1)
 
+    predictor = MCMC() if FLAGS.mcmc else get_prediction
+
     metric_to_values = defaultdict(lambda: [])
     for scene_index in tqdm(range(num_scenes)):
 
@@ -138,7 +256,7 @@ def main(argv):
 
         gt_masks = (load_gqn_masks if 'gqn' in FLAGS.data_path else load_clevr_masks)(scene_index, frame_indices)  # frame, y, x, slot
 
-        recon_combined, recons, masks, slots = get_prediction(model, frames)
+        recon_combined, recons, masks, slots = predictor(model, frames)
         # recon_combined :: frame, y, x, rgb
         # recons :: frame, slot, y, x, rgb
         # masks :: frame, slot, y, x, singleton

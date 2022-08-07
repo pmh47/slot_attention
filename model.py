@@ -126,7 +126,7 @@ def unstack_and_split(x, batch_size, num_channels=3):
 class SlotAttentionAutoEncoder(layers.Layer):
   """Slot Attention-based auto-encoder for object discovery."""
 
-  def __init__(self, resolution, num_slots, num_iterations):
+  def __init__(self, resolution, num_slots, num_iterations, decoder_only=False):
     """Builds the Slot Attention-based auto-encoder.
 
     Args:
@@ -138,6 +138,7 @@ class SlotAttentionAutoEncoder(layers.Layer):
     self.resolution = resolution
     self.num_slots = num_slots
     self.num_iterations = num_iterations
+    self.decoder_only = decoder_only
 
     self.encoder_cnn = tf.keras.Sequential([
         layers.Conv2D(64, kernel_size=5, padding="SAME", activation="relu"),
@@ -178,19 +179,26 @@ class SlotAttentionAutoEncoder(layers.Layer):
         slot_size=64,
         mlp_hidden_size=128)
 
-  def call(self, image):
-    # `image` has shape: [batch_size, width, height, num_channels].
+  def call(self, image_or_slots):
 
-    # Convolutional encoder with position embedding.
-    x = self.encoder_cnn(image)  # CNN Backbone.
-    x = self.encoder_pos(x)  # Position embedding.
-    x = spatial_flatten(x)  # Flatten spatial dimensions (treat image as set).
-    x = self.mlp(self.layer_norm(x))  # Feedforward network on set.
-    # `x` has shape: [batch_size, width*height, input_size].
+    if not self.decoder_only:
 
-    # Slot Attention module.
-    slots = self.slot_attention(x)
-    # `slots` has shape: [batch_size, num_slots, slot_size].
+      # `image_or_slots` has shape: [batch_size, width, height, num_channels].
+
+      # Convolutional encoder with position embedding.
+      x = self.encoder_cnn(image_or_slots)  # CNN Backbone.
+      x = self.encoder_pos(x)  # Position embedding.
+      x = spatial_flatten(x)  # Flatten spatial dimensions (treat image as set).
+      x = self.mlp(self.layer_norm(x))  # Feedforward network on set.
+      # `x` has shape: [batch_size, width*height, input_size].
+
+      # Slot Attention module.
+      slots = self.slot_attention(x)
+      # `slots` has shape: [batch_size, num_slots, slot_size].
+
+    else:
+      # `image_or_slots` has shape: [batch_size, num_slots, slot_size].
+      slots = image_or_slots
 
     # Spatial broadcast decoder.
     x = spatial_broadcast(slots, self.decoder_initial_size)
@@ -200,7 +208,7 @@ class SlotAttentionAutoEncoder(layers.Layer):
     # `x` has shape: [batch_size*num_slots, width, height, num_channels+1].
 
     # Undo combination of slot and batch dimension; split alpha masks.
-    recons, masks = unstack_and_split(x, batch_size=image.shape[0])
+    recons, masks = unstack_and_split(x, batch_size=image_or_slots.shape[0])
     # `recons` has shape: [batch_size, num_slots, width, height, num_channels].
     # `masks` has shape: [batch_size, num_slots, width, height, 1].
 
@@ -311,14 +319,20 @@ def build_model(resolution, batch_size, num_slots, num_iterations,
   """Build keras model."""
   if model_type == "object_discovery":
     model_def = SlotAttentionAutoEncoder
+  elif model_type == "object_decoder":
+    model_def = lambda *args: SlotAttentionAutoEncoder(*args, decoder_only=True)
   elif model_type == "set_prediction":
     model_def = SlotAttentionClassifier
   else:
     raise ValueError("Invalid name for model type.")
 
-  image = tf.keras.Input(list(resolution) + [num_channels], batch_size)
-  outputs = model_def(resolution, num_slots, num_iterations)(image)
-  model = tf.keras.Model(inputs=image, outputs=outputs)
+  if model_type == "object_decoder":
+      image_or_slots = tf.keras.Input([num_slots, 64], batch_size)
+  else:
+    image_or_slots = tf.keras.Input(list(resolution) + [num_channels], batch_size)
+
+  outputs = model_def(resolution, num_slots, num_iterations)(image_or_slots)
+  model = tf.keras.Model(inputs=image_or_slots, outputs=outputs)
   return model
 
 
