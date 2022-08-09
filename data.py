@@ -126,8 +126,10 @@ def build_ood(split, data_path, resolution=(128, 128), shuffle=False, max_n_obje
     else:
         return [f'{folder}/{frame_idx}.png' for frame_idx in range(max_num_frames)]
 
+  print(f'{data_path}/{split}/images')
   image_folders = sorted(glob(f'{data_path}/{split}/images/*'))
   filenames = sum(map(get_images_for_folder, image_folders), [])
+  assert len(filenames) > 0
   ds = tf.data.Dataset.from_tensor_slices(filenames)
   if shuffle:
     ds = ds.shuffle(1024)

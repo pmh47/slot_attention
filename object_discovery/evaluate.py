@@ -73,7 +73,7 @@ class MCMC:
         slots = np.load(FLAGS.ckpt_path + '/slots.npy')
         slots = slots.reshape(-1, slots.shape[-1])
         np.random.shuffle(slots)
-        slots = slots[:1000]
+        slots = slots[:5000]
         print(slots.shape)
         self._gmm = sklearn.mixture.GaussianMixture(FLAGS.num_cpts, covariance_type='diag', verbose=True)
         self._gmm.fit(slots)
@@ -82,7 +82,7 @@ class MCMC:
 
         assert frames.shape[0] == 1
 
-        iterations = 5000
+        iterations = 4000
         mh_frequency = 10
         mala_adam_lr = 1.e-3
         epsilon = 1.e-4  # std of LD normal perturbation
@@ -163,10 +163,10 @@ class MCMC:
 
             if iteration % 100 == 0:
                 print(f'{iteration}: mse = {log_P_current}')
-                tf.io.write_file(f'{iteration:04}.png', tf.image.encode_png(tf.cast(tf.concat([
-                    tf.clip_by_value(renormalize(model(current_slots[None])[0][0]), 0., 1.),
-                    frames[0]
-                ], axis=1) * 255, tf.uint8)))
+                # tf.io.write_file(f'{iteration:04}.png', tf.image.encode_png(tf.cast(tf.concat([
+                #     tf.clip_by_value(renormalize(model(current_slots[None])[0][0]), 0., 1.),
+                #     frames[0]
+                # ], axis=1) * 255, tf.uint8)))
 
         recon_combined, recons, masks, slots = model(current_slots[None])
         recon_combined = renormalize(recon_combined)
